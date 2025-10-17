@@ -1,0 +1,10 @@
+Available commands:
+help - the page you are reading now
+help [command] - help on specified command
+market - information about current state of the market
+inf [gamer number] - information about specified gamer
+produce [number] - produce number units of produce
+buy [number] [price] - buy number units of stuff
+sell [number] [price] - sell number units of produce
+newplant - build new plant
+end - end operations

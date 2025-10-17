@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environments
+venv/
+.env/
+*/venv/
+*/.env/
+
+# Jupyter and data
+.ipynb_checkpoints/
+*.h5
+*.pkl
+*.csv
+*.npy
+*.npz
+
+# System
+.DS_Store
+
