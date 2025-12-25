@@ -1,0 +1,605 @@
+;ИТОГ 2
+;ШАГ 1: ПАРСЕР
+(defun all-values-numeric-p (solutions)
+  (cond
+    ((null solutions) t)
+    (t
+     (and (numberp (cadr (car solutions)))
+          (all-values-numeric-p (cdr solutions))))))
+(defun is-number-token (token)
+  (cond
+    ((numberp token) t)
+    ((and (symbolp token) 
+          (digit-char-p (char (symbol-name token) 0))) t)
+    (t nil)))
+(defun token-to-number (token)
+  (cond
+    ((numberp token) token)
+    (t (read-from-string (symbol-name token)))))
+(defun is-variable-p (token)
+  (and (symbolp token)
+       (upper-case-p (char (symbol-name token) 0))))
+(defun parse-equation (equation-tokens)
+  (parse-equation-direct equation-tokens '() '() 1 0))
+(defun parse-equation-direct (tokens left-coeffs right-coeffs current-coeff side)
+  (cond
+    ((null tokens)
+     (normalize-equation left-coeffs right-coeffs))
+    ((eq (car tokens) '=)
+     (parse-equation-direct (cdr tokens) left-coeffs right-coeffs 1 1))
+    ((eq (car tokens) '*)
+     (parse-equation-direct (cdr tokens) left-coeffs right-coeffs current-coeff side))
+    ((eq (car tokens) '+)
+     (parse-equation-direct (cdr tokens) left-coeffs right-coeffs 1 side))
+    ((eq (car tokens) '-)
+     (parse-equation-direct (cdr tokens) left-coeffs right-coeffs -1 side))
+    ((is-number-token (car tokens))
+     (parse-number-token (car tokens) tokens left-coeffs right-coeffs current-coeff side))
+    ((is-variable-p (car tokens))
+     (parse-variable-token (car tokens) tokens left-coeffs right-coeffs current-coeff side))
+    (t
+     (parse-equation-direct (cdr tokens) left-coeffs right-coeffs current-coeff side))))
+(defun parse-number-token (num-token tokens left-coeffs right-coeffs current-coeff side)
+  (cond
+    ((and (cdr tokens) (eq (cadr tokens) '*))
+     (parse-equation-direct (cddr tokens) left-coeffs right-coeffs 
+                           (* current-coeff (token-to-number num-token)) side))
+    (t
+     (add-constant-to-equation (token-to-number num-token) tokens left-coeffs right-coeffs current-coeff side))))
+(defun add-constant-to-equation (num tokens left-coeffs right-coeffs current-coeff side)
+  (add-constant-helper (* current-coeff num) tokens left-coeffs right-coeffs side))
+(defun add-constant-helper (value tokens left-coeffs right-coeffs side)
+  (cond
+    ((= side 0) 
+     (parse-equation-direct (cdr tokens) 
+                           (add-coefficient-to-list '_const value left-coeffs)
+                           right-coeffs 
+                           1 
+                           side))
+    (t 
+     (parse-equation-direct (cdr tokens) 
+                           left-coeffs
+                           (add-coefficient-to-list '_const value right-coeffs)
+                           1 
+                           side))))
+(defun parse-variable-token (var tokens left-coeffs right-coeffs current-coeff side)
+  (cond
+    ((and (cdr tokens) (eq (cadr tokens) '*))
+     (parse-equation-direct (cddr tokens) left-coeffs right-coeffs current-coeff side))
+    (t
+     (add-variable-helper var current-coeff tokens left-coeffs right-coeffs side))))
+(defun add-variable-helper (var coeff tokens left-coeffs right-coeffs side)
+  (cond
+    ((= side 0) 
+     (parse-equation-direct (cdr tokens) 
+                           (add-coefficient-to-list var coeff left-coeffs)
+                           right-coeffs 
+                           1 
+                           side))
+    (t 
+     (parse-equation-direct (cdr tokens) 
+                           left-coeffs
+                           (add-coefficient-to-list var coeff right-coeffs)
+                           1 
+                           side))))
+(defun add-coefficient-to-list (var coeff coeff-list)
+  (add-coefficient-to-list-helper var coeff coeff-list (assoc var coeff-list)))
+(defun add-coefficient-to-list-helper (var coeff coeff-list existing)
+  (cond
+    (existing
+     (add-coefficient-to-list-helper-2 var coeff coeff-list (cadr existing)))
+    (t
+     (cons (list var coeff) coeff-list))))
+(defun add-coefficient-to-list-helper-2 (var coeff coeff-list existing-coeff)
+  (add-coefficient-to-list-helper-3 var coeff coeff-list existing-coeff (remove-assoc-from-list var coeff-list)))
+(defun add-coefficient-to-list-helper-3 (var coeff coeff-list existing-coeff rest)
+  (add-coefficient-to-list-helper-4 var coeff coeff-list existing-coeff rest (+ coeff existing-coeff)))
+(defun add-coefficient-to-list-helper-4 (var coeff coeff-list existing-coeff rest new-coeff)
+  (cond
+      ((= new-coeff 0) rest)
+      (t (cons (list var new-coeff) rest))))
+(defun remove-assoc-from-list (key alist)
+  (cond
+    ((null alist) '())
+    ((eq (caar alist) key) (cdr alist))
+    (t (cons (car alist) (remove-assoc-from-list key (cdr alist))))))
+(defun normalize-equation (left-coeffs right-coeffs)
+  (normalize-equation-helper left-coeffs (negate-coeff-list right-coeffs)))
+(defun normalize-equation-helper (left-coeffs negated-right-coeffs)
+  (clean-zero-coeffs (merge-all-coeff-lists (append left-coeffs negated-right-coeffs))))
+(defun negate-coeff-list (coeffs)
+  (cond
+    ((null coeffs) '())
+    (t
+     (cons (list (caar coeffs) (- (cadar coeffs)))
+           (negate-coeff-list (cdr coeffs))))))
+(defun merge-all-coeff-lists (coeff-list)
+  (merge-coeffs-simple coeff-list '()))
+(defun merge-coeffs-simple (coeff-list result)
+  (cond
+    ((null coeff-list) result)
+    
+    (t
+     (merge-coeffs-simple-helper (car coeff-list) (cdr coeff-list) result))))
+(defun merge-coeffs-simple-helper (item rest result)
+  (merge-coeffs-simple-helper-2 (car item) (cadr item) rest result))
+(defun merge-coeffs-simple-helper-2 (var coeff rest result)
+  (cond
+    ((assoc var result)
+     (merge-coeffs-simple-helper-3 var coeff rest result (assoc var result)))
+    (t
+     (merge-coeffs-simple rest (cons (list var coeff) result)))))
+(defun merge-coeffs-simple-helper-3 (var coeff rest result existing)
+  (merge-coeffs-simple-helper-4 var coeff rest result (cadr existing) (remove-assoc-from-list var result)))
+(defun merge-coeffs-simple-helper-4 (var coeff rest result existing-coeff new-result)
+  (merge-coeffs-simple-helper-5 var coeff rest result existing-coeff new-result (+ coeff existing-coeff)))
+(defun merge-coeffs-simple-helper-5 (var coeff rest result existing-coeff new-result total-coeff)
+  (cond
+      ((= total-coeff 0)
+       (merge-coeffs-simple rest new-result))
+      (t
+       (merge-coeffs-simple rest (cons (list var total-coeff) new-result)))))
+(defun clean-zero-coeffs (coeff-list)
+  (cond
+    ((null coeff-list) '())
+    ((and (eq (caar coeff-list) '_const) (= (cadar coeff-list) 0))
+     (clean-zero-coeffs (cdr coeff-list)))
+    ((= (cadar coeff-list) 0)
+     (clean-zero-coeffs (cdr coeff-list)))
+    (t
+     (cons (car coeff-list) (clean-zero-coeffs (cdr coeff-list))))))
+(defun parse-system (system-tokens)
+  (cond
+    ((null system-tokens) '())
+    (t
+     (cons (parse-equation (car system-tokens))
+           (parse-system (cdr system-tokens))))))
+
+;ШАГ 2: EXPRESS-VARIABLE
+(defun express-variable (var eq)
+  (express-variable-main var eq (assoc var eq)))
+(defun express-variable-main (var eq var-entry)
+  (cond
+   ((null var-entry) nil)
+   (t (express-variable-with-coeff 
+       var 
+       eq 
+       (cadr var-entry)
+       (assoc '_const eq)))))
+(defun express-variable-with-coeff (var eq coeff const-entry)
+  (express-variable-build-result 
+   coeff 
+   (get-const-value const-entry)
+   (collect-other-variables var eq)))
+(defun get-const-value (const-entry)
+  (cond
+   (const-entry (cadr const-entry))
+   (t 0)))
+(defun collect-other-variables (var eq)
+  (cond
+   ((null eq) nil)
+   ((or (equal (caar eq) '_const)
+        (equal (caar eq) var))
+    (collect-other-variables var (cdr eq)))
+   (t (cons (car eq) (collect-other-variables var (cdr eq))))))
+(defun express-variable-build-result (coeff const other-vars)
+  (cond
+   ((equal coeff 1) (build-symbolic-numerator (- const) other-vars))
+   ((equal coeff -1) (list '* -1 (build-symbolic-numerator (- const) other-vars)))
+   (t (list '/ (build-symbolic-numerator (- const) other-vars) coeff))))
+(defun build-symbolic-numerator (neg-const vars)
+  (cond
+   ((null vars) (list '+ neg-const))
+   (t (cons '+ (cons neg-const (symbolic-terms vars))))))
+(defun symbolic-terms (vars)
+  (cond
+   ((null vars) nil)
+   (t (cons (symbolic-term (car vars))
+            (symbolic-terms (cdr vars))))))
+(defun symbolic-term (var-entry)
+  (list '* (- (cadr var-entry)) (car var-entry)))
+;ШАГ 3: НОРМАЛИЗАЦИЯ ВЫРАЖЕНИЙ
+(defun normalize-expr-for-substitution (expr)
+  (cond
+   ((and (listp expr) (eq (car expr) '+)) expr)
+   ((numberp expr) (list '+ expr))
+   ((and (listp expr) (eq (car expr) '/) (numberp (cadr expr)))
+    (list '+ (/ (cadr expr) (caddr expr))))
+   ((and (listp expr) (eq (car expr) '/)
+         (listp (cadr expr)) (eq (caadr expr) '+))
+    (normalize-division-simple (cadr expr) (caddr expr)))
+   (t expr)))
+(defun normalize-division-simple (sum-expr denom)
+  (normalize-division-simple-helper (cdr sum-expr) denom))
+(defun normalize-division-simple-helper (terms denom)
+  (cond
+   ((null terms) (list '+ 0))
+   (t (normalize-division-build-sum 
+       (/ (car terms) denom)
+       (normalize-division-process-terms (cdr terms) denom)))))
+(defun normalize-division-build-sum (const-term var-terms)
+  (cond
+   ((null var-terms) (list '+ const-term))
+   (t (cons '+ (cons const-term var-terms)))))
+(defun normalize-division-process-terms (terms denom)
+  (cond
+   ((null terms) nil)
+   (t (cons (create-normalized-term (car terms) denom)
+           (normalize-division-process-terms (cdr terms) denom)))))
+(defun create-normalized-term (term denom)
+  (list '* (/ (cadr term) denom) (caddr term)))
+;ШАГ 4: SUBSTITUTE-IN-SYSTEM
+(defun substitute-in-system (var expr other-eqs)
+  (substitute-in-system-helper var (normalize-expr-for-substitution expr) other-eqs))
+(defun substitute-in-system-helper (var expr other-eqs)
+  (cond
+   ((null other-eqs) nil)
+   (t (cons (substitute-in-equation var expr (car other-eqs))
+            (substitute-in-system-helper var expr (cdr other-eqs))))))
+(defun substitute-in-equation (var expr eq)
+  (substitute-in-equation-helper var expr eq (assoc var eq)))
+(defun substitute-in-equation-helper (var expr eq var-entry)
+  (cond
+   ((null var-entry) eq)
+   (t (process-substitution var expr eq (cadr var-entry)))))
+(defun process-substitution (var expr eq coeff)
+  (cond
+   ((= coeff 0) eq)
+   (t (handle-substitution coeff expr var eq))))
+(defun handle-substitution (coeff expr var eq)
+  (cond
+   ((numberp expr)
+    (remove-variable var (add-constant-to-eq (* coeff expr) eq)))
+   
+   ((and (listp expr) (eq (car expr) '+))
+    (handle-sum-substitution coeff expr var eq))
+   
+   (t eq)))
+(defun handle-sum-substitution (coeff sum-expr var eq)
+  (remove-variable var (add-sum-to-equation coeff sum-expr eq)))
+(defun add-sum-to-equation (coeff sum-expr eq)
+  (add-sum-to-equation-helper coeff (cdr sum-expr) eq))
+(defun add-sum-to-equation-helper (coeff terms eq)
+  (cond
+   ((null terms) eq)
+   (t (add-sum-to-equation-helper coeff (cdr terms) 
+                                  (add-term-to-equation coeff (car terms) eq)))))
+(defun add-term-to-equation (coeff term eq)
+  (cond
+   ((numberp term)
+    (add-constant-to-eq (* coeff term) eq))
+   
+   ((and (listp term) (eq (car term) '*))
+    (add-coefficient-to-eq (caddr term) (* coeff (cadr term)) eq))
+   
+   (t eq)))
+(defun remove-variable (var eq)
+  (cond
+   ((null eq) nil)
+   ((equal (caar eq) var) (remove-variable var (cdr eq)))
+   (t (cons (car eq) (remove-variable var (cdr eq))))))
+(defun add-constant-to-eq (value eq)
+  (add-constant-to-eq-helper value eq (assoc '_const eq)))
+(defun add-constant-to-eq-helper (value eq const-entry)
+  (cond
+   (const-entry
+    (merge-constants-in-eq value eq (cadr const-entry)))
+   ((= value 0) eq)
+   (t (cons (list '_const value) eq))))
+(defun merge-constants-in-eq (new-value eq old-value)
+  (cond
+   ((= (+ old-value new-value) 0) (remove-const-from-eq eq))
+   (t (cons (list '_const (+ old-value new-value)) 
+            (remove-const-from-eq eq)))))
+(defun remove-const-from-eq (eq)
+  (cond
+   ((null eq) nil)
+   ((equal (caar eq) '_const) (cdr eq))
+   (t (cons (car eq) (remove-const-from-eq (cdr eq))))))
+(defun add-coefficient-to-eq (var coeff eq)
+  (add-coefficient-to-eq-helper var coeff eq (assoc var eq)))
+(defun add-coefficient-to-eq-helper (var coeff eq existing-entry)
+  (cond
+   (existing-entry
+    (merge-coefficients-in-eq var coeff eq (cadr existing-entry)))
+   ((= coeff 0) eq)
+   (t (cons (list var coeff) eq))))
+(defun merge-coefficients-in-eq (var new-coeff eq old-coeff)
+  (cond
+   ((= (+ old-coeff new-coeff) 0) (remove-var-from-eq var eq))
+   (t (cons (list var (+ old-coeff new-coeff)) 
+            (remove-var-from-eq var eq)))))
+(defun remove-var-from-eq (var eq)
+  (cond
+   ((null eq) nil)
+   ((equal (caar eq) var) (cdr eq))
+   (t (cons (car eq) (remove-var-from-eq var (cdr eq))))))
+;ШАГ 5: ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ РЕКУРСИВНОГО РЕШЕНИЯ 
+(defun find-pivot (system)
+  (cond
+   ((null system) nil)
+   (t (find-pivot-in-equation (car system) (car system)))))
+(defun find-pivot-in-equation (original-eq eq)
+  (cond
+   ((null eq) nil)
+   
+   ((equal (caar eq) '_const)
+    (find-pivot-in-equation original-eq (cdr eq)))
+   
+   ((not (= (cadar eq) 0))
+    (list (caar eq) original-eq))
+   
+   (t (find-pivot-in-equation original-eq (cdr eq)))))
+(defun check-contradiction (eq)
+  (check-contradiction-helper eq t))
+(defun check-contradiction-helper (eq only-const)
+  (cond
+   ((null eq) (and only-const nil))
+   ((equal (caar eq) '_const)
+    (check-contradiction-check-const (cadar eq) (cdr eq) only-const))
+   (t 
+    (if (not (= (cadar eq) 0))
+        nil
+        (check-contradiction-helper (cdr eq) only-const)))))
+(defun check-contradiction-check-const (coeff rest only-const)
+  (cond
+   ((and (not (= coeff 0)) (null rest)) t)
+   (t (check-contradiction-helper rest nil))))
+(defun check-tautology (eq)
+  (cond
+   ((null eq) t)
+   ((= (cadar eq) 0) (check-tautology (cdr eq)))
+   (t nil)))
+;ШАГ 6: БАЗОВАЯ РЕАЛИЗАЦИЯ РЕКУРСИВНОГО РЕШЕНИЯ
+(defun solve-system-recursive (system env)
+  (cond
+    ((null system) env) 
+    ((check-contradiction (car system)) 
+     (cons 'CONTRADICTION env))  
+    ((check-tautology (car system))
+     (solve-system-recursive (cdr system) env))
+    (t
+     (solve-system-recursive
+      (substitute-in-system
+       (car (find-pivot system))               
+       (express-variable (car (find-pivot system))
+                         (cadr (find-pivot system))) 
+       (remove-equation (cadr (find-pivot system)) system))
+      (cons (list (car (find-pivot system))
+                  (express-variable (car (find-pivot system))
+                                   (cadr (find-pivot system))))
+            env)))))
+(defun remove-equation (eq lst)
+  (cond
+    ((null lst) '())
+    ((equal (car lst) eq) (cdr lst))
+    (t (cons (car lst) (remove-equation eq (cdr lst))))))
+    
+;ШАГ 7: ОБРАТНАЯ ПОДСТАНОВКА
+(defun back-substitute (env)
+  (back-substitute-helper env '()))
+(defun back-substitute-helper (env result)
+  (cond
+    ((null env) result)
+    (t
+     (back-substitute-helper
+      (cdr env)
+      (cons (list (car (car env))
+                  (simplify-expr
+                    (evaluate-expression (cadr (car env)) result)))
+            result)))))
+(defun evaluate-expression (expr known)
+  (cond
+    ((numberp expr) expr)
+    ((and (listp expr) (eq (car expr) '+))
+     (evaluate-sum (cdr expr) known))
+    ((and (listp expr) (eq (car expr) '*))
+     (evaluate-product (cadr expr) (caddr expr) known))
+    ((and (listp expr) (eq (car expr) '/))
+ (evaluate-division
+   (evaluate-expression (cadr expr) known)
+   (evaluate-expression (caddr expr) known)))
+    ((symbolp expr)
+     (evaluate-symbol expr known))
+    (t expr)))
+(defun evaluate-sum (terms known)
+  (cond
+    ((null terms) 0)
+    (t (combine-sum
+        (evaluate-expression (car terms) known)
+        (evaluate-sum (cdr terms) known)))))
+(defun evaluate-symbol (var known)
+  (cond
+    ((null known) var)
+    ((equal (car (car known)) var) (cadr (car known)))
+    (t (evaluate-symbol var (cdr known)))))
+(defun evaluate-product (a b known)
+  (evaluate-product-2 (evaluate-expression a known)
+                      (evaluate-expression b known)))
+(defun evaluate-product-2 (ea eb)
+  (cond
+    ((and (numberp ea) (numberp eb))
+     (* ea eb))
+    (t (list '* ea eb))))
+    
+(defun combine-sum (a b)
+  (cond
+    ((and (numberp a) (numberp b)) (+ a b))
+    (t (cons '+ (cons a (cons b '()))))))
+    
+(defun evaluate-division (num den)
+  (cond
+    ((and (numberp num) (numberp den))
+     (/ num den))
+    (t (list '/ num den))))
+(defun simplify-expr (expr)
+  (cond
+    ((numberp expr) expr)
+    ((and (listp expr) (eq (car expr) '+)) (simplify-sum expr))
+    ((and (listp expr) (eq (car expr) '*))
+     (simplify-product (simplify-expr (cadr expr))
+                       (simplify-expr (caddr expr))))
+    ((and (listp expr) (eq (car expr) '/))
+     (simplify-division (simplify-expr (cadr expr))
+                        (simplify-expr (caddr expr))))
+    (t expr)))
+    
+(defun simplify-sum (expr)
+  (cond
+    ((null (cdr expr)) 0)
+    (t (simplify-sum-helper (cdr expr) 0 '()))))
+(defun simplify-sum-helper (terms num rest)
+  (cond
+    ((null terms)
+     (cond
+       ((and (equal num 0) (null rest)) 0)
+       ((null rest) num)
+       ((equal num 0) (cons '+ (reverse-helper rest '())))
+       (t (cons '+ (cons num (reverse-helper rest '()))))))
+    ((numberp (car terms))
+     (simplify-sum-helper (cdr terms) (+ num (car terms)) rest))
+    ((and (listp (car terms)) (eq (car (car terms)) '+))
+     (simplify-sum-helper
+       (append (cdr (car terms)) (cdr terms))
+       num
+       rest))
+    (t
+     (simplify-sum-helper (cdr terms) num (cons (car terms) rest)))))
+(defun simplify-product (a b)
+  (cond
+    ((or (equal a 0) (equal b 0)) 0)
+    ((equal a 1) b)
+    ((equal b 1) a)
+    ((and (numberp a) (numberp b)) (* a b))
+    (t (list '* a b))))
+(defun simplify-division (a b)
+  (cond
+    ((equal a 0) 0)
+    ((and (numberp a) (numberp b)) (/ a b))
+    (t (list '/ a b))))
+    
+;ШАГ 8: ОСНОВНАЯ ФУНКЦИЯ solve-system
+(defun solve-system (system-tokens)
+  (print "")
+  (print "Решаем систему...")
+  (solve-system-process (parse-system system-tokens) system-tokens))
+(defun solve-system-process (parsed-system system-tokens)
+  (cond
+    ((null parsed-system) 
+     (print "Пустая система")
+     nil)
+    (t
+     (solve-system-check-result 
+      (solve-system-recursive parsed-system '())
+      system-tokens))))
+(defun solve-system-check-result (recursive-result system-tokens)
+  (cond
+    ((and (not (null recursive-result)) 
+          (eq (car recursive-result) 'CONTRADICTION))
+     (print "Нет решений")
+     nil)
+    (t
+     (solve-system-process-solutions recursive-result system-tokens))))
+(defun solve-system-process-solutions (env system-tokens)
+  (cond
+    ((null env)
+     (print "Бесконечное количество решений (все переменные свободные)")
+     (print (append (get-all-variables system-tokens '()) 
+                    '(— свободные переменные)))
+     nil)
+    (t
+     (solve-system-process-final 
+      (back-substitute env)
+      system-tokens))))
+(defun solve-system-process-final (final-solutions system-tokens)
+  (cond
+    ((all-values-numeric-p final-solutions)
+     (print "Единственное решение:")
+     (solve-system-print-solutions final-solutions)
+     final-solutions)
+    (t
+     (print "Бесконечное количество решений:")
+     (solve-system-print-parametric final-solutions system-tokens)
+     final-solutions)))
+(defun reverse-helper (lst acc)
+  (cond
+    ((null lst) acc)
+    (t (reverse-helper (cdr lst) (cons (car lst) acc)))))
+(defun get-all-variables (system-tokens acc)
+  (cond
+    ((null system-tokens) (remove-duplicates-vars acc))
+    (t (get-all-variables (cdr system-tokens) 
+                                (append acc (get-vars-from-equation (car system-tokens)))))))
+(defun get-vars-from-equation (equation)
+  (cond
+    ((null equation) '())
+    ((is-variable-p (car equation)) (cons (car equation) (get-vars-from-equation (cdr equation))))
+    (t (get-vars-from-equation (cdr equation)))))
+(defun remove-duplicates-vars (lst)
+  (cond
+    ((null lst) '())
+    ((member (car lst) (cdr lst)) (remove-duplicates-vars (cdr lst)))
+    (t (cons (car lst) (remove-duplicates-vars (cdr lst))))))
+(defun find-free-variables (solutions all-vars)
+  (find-free-vars-helper all-vars solutions))
+(defun find-free-vars-helper (vars solutions)
+  (cond
+    ((null vars) '())
+    ((var-is-free (car vars) solutions) (cons (car vars) (find-free-vars-helper (cdr vars) solutions)))
+    (t (find-free-vars-helper (cdr vars) solutions))))
+(defun var-is-free (var solutions)
+  (cond
+    ((null solutions) t)
+    ((eq (car (car solutions)) var) nil)
+    (t (var-is-free var (cdr solutions)))))
+(defun prefix-to-infix (expr)
+  (cond
+    ((atom expr) expr)
+    ((eq (car expr) '+) (prefix-sum-to-infix (cdr expr)))
+    ((eq (car expr) '*) (prefix-product-to-infix (cdr expr)))
+    ((eq (car expr) '/) (list (prefix-to-infix (cadr expr)) '/ (prefix-to-infix (caddr expr))))
+    (t expr)))
+(defun prefix-sum-to-infix (terms)
+  (cond
+    ((null (cdr terms)) (prefix-to-infix (car terms)))
+    (t (list (prefix-to-infix (car terms)) '+ (prefix-sum-to-infix (cdr terms))))))
+(defun prefix-product-to-infix (terms)
+  (cond
+    ((null (cdr terms)) (prefix-to-infix (car terms)))
+    (t (list (prefix-to-infix (car terms)) '* (prefix-product-to-infix (cdr terms))))))
+(defun simplify-infix (expr)
+  (cond
+    ((atom expr) expr)
+    ((and (eq (cadr expr) '+) (numberp (car expr)) (= (car expr) 0)) (caddr expr))
+    ((and (eq (cadr expr) '+) (numberp (caddr expr)) (= (caddr expr) 0)) (car expr))
+    ((and (eq (cadr expr) '*) (numberp (car expr)) (= (car expr) 1)) (caddr expr))
+    ((and (eq (cadr expr) '*) (numberp (caddr expr)) (= (caddr expr) 1)) (car expr))
+    ((and (eq (cadr expr) '*) (numberp (car expr)) (= (car expr) 0)) 0)
+    ((and (eq (cadr expr) '*) (numberp (caddr expr)) (= (caddr expr) 0)) 0)
+    (t expr)))
+(defun solve-system-print-solutions (solutions)
+  (cond
+    ((null solutions) nil)
+    (t
+     (print (list (car (car solutions)) '= (cadr (car solutions))))
+     (solve-system-print-solutions (cdr solutions)))))
+(defun solve-system-print-parametric (solutions system-tokens)
+  (solve-system-print-param solutions (find-free-variables solutions (get-all-variables system-tokens '()))))
+(defun solve-system-print-param (solutions free-vars)
+  (cond
+    ((null solutions) 
+     (solve-system-print-free free-vars))
+    (t 
+     (print (list (car (car solutions)) '= 
+                  (simplify-infix (prefix-to-infix (cadr (car solutions))))))
+     (solve-system-print-param (cdr solutions) free-vars))))
+(defun solve-system-print-free (free-vars)
+  (cond
+    ((null free-vars) nil)
+    (t 
+     (print (append free-vars '(— свободные переменные)))
+     nil)))
+
+
+
+(solve-system '((X + Y + Z = 4) (X + Y - Z = 0) (X - Y + Z = 2)))
