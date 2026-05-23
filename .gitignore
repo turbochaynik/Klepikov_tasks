@@ -19,4 +19,15 @@ venv/
 
 # System
 .DS_Store
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace
 
+# SwiftPM
+.swiftpm/
+
+# macOS
+.DS_Store
