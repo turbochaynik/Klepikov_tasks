@@ -1,0 +1,11 @@
+# Xcode
+build/
+DerivedData/
+*.xcworkspace
+*.xcuserstate
+*.moved-aside
+*.hmap
+*.ipa
+*.xcuserdatad
+*.plist
+

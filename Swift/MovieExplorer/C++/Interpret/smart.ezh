@@ -1,0 +1,217 @@
+//Print information
+int printinf ()
+{
+    print "\n";
+    print "Player ",my_id(),". Month  ",cur_turn(),". ",
+    	    active_players()," of ",players()," players remained","\n";
+
+    int i; i = 1;
+    while (i <= players()) {
+	print "Player ", i,": ";
+	print "balance: $", money(i),"; stuff: ",raw(i);
+	print "; production: ",production(i),"; plants: ",factories(i),"\n";
+	print "          ",manufactured(i)," manufactured; ";
+	print result_raw_sold(i)," stuff bought at $",result_raw_price(i)," price; ";
+	print result_prod_bought(i)," prod sold at $",result_prod_price(i)," price","\n";
+        i=i+1;
+    }
+    print supply()," stuff for $",raw_price()," minimum","\n";
+    print demand()," produce for $",production_price()," maximum","\n";
+    return 0;
+}
+/*Prints an array of float*/
+int printfloat (float arr[0], int num)
+{
+    int i; i=0;
+    while (i<num) {
+    	print arr[i], "  ";
+	i=i+1;
+    }
+    return 0;
+}
+
+int SetNulls (float arr[0], int num)
+{
+    num = num-1;
+    while (num>=0) {
+    	arr[num] = 0.0;
+	num = num-1;
+    }
+    return 0;
+}
+int FillVariations (float sellvariation[0], int lastprodprice, 
+    	    	    float buyvariation[0], int lastrawprice) {
+    float currvar;
+    int i; i=1;
+    while (i<=players()) {
+    	if (money(i) != 0) {
+    	    //Counting the variation from the maximum price of production
+    	    if (result_prod_price(i) != 0) {
+    	    	currvar = (lastprodprice-result_prod_price(i)+0.0) / lastprodprice;
+    	    	sellvariation[i-1] = (sellvariation[i-1]*(cur_turn()-2) + currvar)/(cur_turn()-1);
+    	    }
+    	    //Counting the variation from the minimum price of stuff
+    	    if (result_raw_price(i) != 0) {
+    	    	currvar = (0-lastrawprice+result_raw_price(i)+0.0) / lastrawprice;
+    	    	buyvariation[i-1] = (buyvariation[i-1]*(cur_turn()-2) + currvar)/(cur_turn()-1);
+    	    }
+    	}    
+	i=i+1;
+    }		    
+    return 0;
+}
+
+int min (int i, int j)
+{
+    if (i <= j) {
+    	return i;
+    }
+    else {
+    	return j;
+    }
+}
+
+//Counting the number of items to produce.
+/*Producing maximum for our money, factories and stuff, but not more then 3 items*/
+int ProduceNum ()
+{
+    int prod_num;
+    prod_num  = min( raw(my_id()), factories(my_id()) );
+    while ( (prod_num*2000 >= money(my_id())-1000*factories(my_id())) & 
+    	    (prod_num != 0) ){
+    	prod_num = prod_num-1; //Reducing prod_num till we have enough money
+            }
+    if ( production(my_id()) <= 3 ){
+    	return prod_num;
+    }
+    if ( (production(my_id()) < 6) & (prod_num>production(my_id())-3) ) {
+    	return prod_num - production(my_id())+3;
+    }
+    return 0;
+}
+
+//Counting the number of production that can be sold by lower price
+int GetLowerNum (float sellvariation[0], int price)
+{
+    int i; i=1;
+    int count; count = 0;
+    while (i<=players()) {
+    	if ( (money(i)!=0) & (i!=my_id()) ) {
+    	    /*Suppose that the variation = average variation, 
+	      then newprice = maxprice*(1 - average variation);*/
+	    if (production_price()*(1-sellvariation[i-1]) <= price ){
+	    	count = count + production(i);
+        }
+	}    
+    	i=i+1;
+    }    
+    return count;
+}
+int SellNum ()
+{
+    return min (demand(), production(my_id()));
+}
+//Counting the price of our production
+int SellPrice (float sellvariation[0])
+{
+    int i; i=1;
+    int allprod; allprod = 0;
+    while (i<=players()) {
+    	if (money(i) != 0){
+	    allprod = allprod + production(i);
+        }
+    	i=i+1;
+    }        
+    if (allprod<=demand()){
+    	return production_price();
+    }
+    //Reducing price till GetLowerNum <= demand - ourproduction
+    int price; price = production_price();
+
+    while (GetLowerNum(sellvariation, price) > demand() - SellNum() ) {
+    	price = price - 20;
+    }
+    return price;
+}
+//Counting the number of stuff to buy.
+/*Buy enough stuff to make all factories working*/
+int BuyNum (int produced)
+{
+    int buy_num;
+    if (raw(my_id()) >= factories(my_id()) + produced) {
+    	return 0;
+    }
+    buy_num  = min( supply(), factories(my_id())+produced-raw(my_id()));
+    return buy_num;
+}
+int BuyPrice (float sellvariation[0])
+{
+    return raw_price();
+}
+
+int main ()
+{
+    float sellvariation[10]; 
+    float buyvariation[10];
+    if (players()>10) {
+    	print "Too many players!", "\n";
+	return 0-1;
+    }
+    
+    int lastprodprice; 
+    int lastrawprice;
+
+
+    //First step
+    SetNulls (sellvariation, players());
+    SetNulls (buyvariation, players());
+    lastprodprice = production_price();
+    lastrawprice = raw_price();
+
+    sell 2, production_price();
+    prod 2;
+    turn;
+
+    //Next steps
+    while (1) {
+    	FillVariations (sellvariation, lastprodprice, buyvariation, lastrawprice);    	
+/*
+print "\n";
+printfloat (sellvariation, players());
+print "\n";
+printfloat (buyvariation, players());
+*/
+    	lastprodprice = production_price();
+    	lastrawprice = raw_price();
+    	int balance; 
+	balance = money (my_id());
+	int produced; 
+	produced = ProduceNum();
+	balance = balance - produced*2000;
+	int sellnum; 
+	sellnum = SellNum();
+	int sellprice;
+	sellprice = SellPrice(sellvariation);
+    	int buynum;
+	buynum = BuyNum (produced);
+	int buyprice;
+	buyprice = BuyPrice(buyvariation);
+/*
+printinf();
+*/
+print "Prod ", produced, "; Sell ",sellnum, " by ", sellprice;
+print "; Buy ",buynum, " by ", buyprice, "\n";
+
+if (cur_turn()%50 == 0) {
+    print "Month ", cur_turn(), "\n";
+    printinf();    
+}
+
+    	prod produced;
+    	sell sellnum, sellprice;
+    	buy buynum, buyprice;    	
+	turn;
+    }
+    
+    return 0;
+}
